@@ -7,36 +7,36 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
 
     val field = Array(height) { Array(width) { ' ' } }
 
-    var stones: MutableMap<Point, Boolean> = mutableMapOf()
-    var lambdaStones: MutableMap<Point, Boolean> = mutableMapOf()
-    var robot = Point(-1, -1)
+    private var stones: MutableMap<Point, Boolean> = mutableMapOf()
+    private var lambdaStones: MutableMap<Point, Boolean> = mutableMapOf()
+    private var robot = Point(-1, -1)
+    private val beard = Point(-1, -1)
 
     init {
         var j = 0
         for (s in inputField.lines()) {
-            var k = 0
-            for (c in s.toCharArray()) {
+            for ((k, c) in s.toCharArray().withIndex()) {
                 field[j][k] = c
                 when (c) {
                     'R' -> robot.setNewPoint(k, j)
-                    '*' -> stones.put(Point(k, j), false)
-                    '@' -> lambdaStones.put(Point(k, j), false)
+                    '*' -> stones[Point(k, j)] = false
+                    '@' -> lambdaStones[Point(k, j)] = false
+                    'W' -> beard.setNewPoint(k, j)
                 }
-                k++
             }
             j++
         }
     }
 
-    var score = 0
-    var growth = 0
-    var razor = 0
-    var flooding = 0    // скорость прибывания воды (количество шагов через которое вода поднимается на 1 уровень)
-    var waterLevel = 0   // уровень воды
-    var waterproof = 10 // сколько шагов без выныривания можно пройти
-    var numberOfSteps = 0
-    var collectedLambdas = 0
-    var stoneFalling = false
+    private var score = 0
+    private var growth = 15 // количество шагов через которое вырастет борода
+    private var razor = 0
+    private var flooding = 0    // скорость прибывания воды (количество шагов через которое вода поднимается на 1 уровень)
+    private var waterLevel = 0   // уровень воды
+    private var waterproof = 10 // сколько шагов без выныривания можно пройти
+    private var numberOfSteps = 0
+    private var collectedLambdas = 0
+    private var isFalling = false // падают ща камни или не
 
     enum class State {
         LIVE,
@@ -45,15 +45,22 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
         DEAD;
     }
 
-    var state: State = State.LIVE
+    enum class Move(val x: Int, val y: Int) {
+        RIGHT(1, 0),
+        LEFT(-1, 0),
+        UP(0, 1),
+        DOWN(0, -1);
+    }
+
+    private var state: State = State.LIVE
 
     fun act(commands: String) {
         if (state == State.LIVE) {
             when (commands) {
-                "R" -> goRight()
-                "L" -> goLeft()
-                "U" -> goUp()
-                "D" -> goDown()
+                "R" -> go(Move.RIGHT)
+                "L" -> go(Move.LEFT)
+                "U" -> go(Move.UP)
+                "D" -> go(Move.DOWN)
                 "S" -> shave()
                 "A" -> abort()
                 "W" -> waiting()
@@ -61,20 +68,151 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
         }
     }
 
-    private fun goRight() {
+    private fun go(move: Move) {
         numberOfSteps++
-        if (stoneFalling) { // chtobi dvigat kamni nado dumat kak kamen
-            // ДУМАЮ МОЖНО ОБЪЕДИНИТЬ ЭТО А МОЖЕТ И НЕ
+        if (isFalling) {
+            val fallingStones = stones.containsValue(true)
+            val fallingLambdaStones = lambdaStones.containsValue(true)
+            falling(fallingStones, fallingLambdaStones)
+        }
+        if (flooding > 0 && numberOfSteps == flooding) { // если установлена скорость прибывания воды и
+            // количество шагов равно ей, тогда поднять воду на 1 лвл и обнулить кол-во шагов
+            waterLevel++
+            numberOfSteps = 0
+        }
+        if (waterLevel >= robot.y) { // если робот в воде, уменьшаем вотерпруф
+            waterproof--
+        }
+        if (waterLevel < robot.y) { // если вынырнул - обновляем
+            waterproof = 10
+        }
+        if (waterproof >= 0) {
+            if (stones.containsKey(Point(robot.y + 1, robot.x))) { // если НАД текущем положением робота камень,
+                // то запускаем падение камня со след хода
+                isFalling = true
+                stones[Point(robot.y + 1, robot.x)] = true
+            }
+            if (lambdaStones.containsKey(Point(robot.y + 1, robot.x))) {
+                isFalling = true
+                lambdaStones[Point(robot.y + 1, robot.x)] = true
+            }
+            if (field[robot.y + move.y][robot.x + move.x] != '#' &&
+                    field[robot.y + move.y][robot.x + move.x] != 'W' &&
+                    field[robot.y + move.y][robot.x + move.x] != 'L') { // если след координата робота НЕ стена,
+                // НЕ борода, НЕ закрытый лифт
+                when (field[robot.y + move.y][robot.x + move.x]) {
+                    '.' -> { // земля
+                        field[robot.y + move.y][robot.x + move.x] = ' '
+                        robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        score--
+                    }
+                    '\\' -> { // лямбда
+                        field[robot.y + move.y][robot.x + move.x] = ' '
+                        score += 24
+                        robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        collectedLambdas++
+                    }
+                    '!' -> { // бритва
+                        field[robot.y + move.y][robot.x + move.x] = ' '
+                        robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        razor++
+                        score--
+                    }
+                    'O' -> { // открытый лифт
+                        robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        score += 50 * collectedLambdas
+                        state = State.WON
+                        gameover()
+                    }
+                    '*' -> { // передвинуть камень
+                        if (field[robot.y + move.y][robot.x + 2 * move.x] == ' ' && (move == Move.RIGHT || move == Move.LEFT)) {
+                            stones.remove(Point(robot.y + move.y, robot.x + move.x))
+                            stones[Point(robot.y + move.y, robot.x + 2 * move.x)] = false
+                            if (field[robot.y + move.y - 1][robot.x + 2 * move.x] == ' ') {
+                                isFalling = true
+                                stones[Point(robot.y + move.y, robot.x + 2 * move.x)] = true
+                            }
+                            robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        }
+                        else {}
+                    }
+                    '@' -> {
+                        if (field[robot.y + move.y][robot.x + 2 * move.x] == ' ' && (move == Move.RIGHT || move == Move.LEFT)) {
+                            lambdaStones.remove(Point(robot.y + move.y, robot.x + move.x))
+                            lambdaStones[Point(robot.y + move.y, robot.x + 2 * move.x)] = false
+                            if (field[robot.y + move.y - 1][robot.x + 2 * move.x] == ' ') {
+                                isFalling = true
+                                lambdaStones[Point(robot.y + move.y, robot.x + 2 * move.x)] = true
+                            }
+                            robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        }
+                        else {}
+                    }
+                    else -> {
+                        robot.setNewPoint(robot.x + move.x, robot.y + move.y)
+                        score--
+                    }
+                }
+            }
+        }
+        if (waterproof < 0) { // утонул
+            state = State.DEAD
+            gameover()
+        }
+    }
+
+    // Добавить трамплины
+
+    private fun shave() {
+        razor--
+        // ??? Придумать как расти, чтобы понять как брить
+    }
+
+    private fun waiting() {
+        score--
+        numberOfSteps++
+        //повторение - подумать
+        if (isFalling) {
+            val fallingStones = stones.containsValue(true)
+            val fallingLambdaStones = lambdaStones.containsValue(true)
+            falling(fallingStones, fallingLambdaStones)
+        }
+        if (flooding > 0 && numberOfSteps == flooding) {
+            waterLevel++
+            numberOfSteps = 0
+        }
+        if (waterLevel >= robot.y) {
+            waterproof--
+        }
+        if (waterproof < 0) {
+            state = State.DEAD
+            gameover()
+        }
+    }
+
+    private fun abort() {
+        state = State.ABORTED
+        score += 25 * collectedLambdas
+        gameover()
+    }
+
+    private fun falling(fallingStones: Boolean, fallingLambdaStones: Boolean) { // chtobi dvigat kamni nado dumat kak kamen
+        if (fallingStones) {
             for (key in stones.keys) { // проходим по всем ключам в камнях
                 if (stones.getValue(key)) { // если по какому-то из ключей значение тру - падаем
                     if (field[key.y - 1][key.x] == ' ') key.setNewPoint(key.x, key.y - 1)
-                    if (field[key.y - 1][key.x] == '.' || field[key.y - 1][key.x] == '#') stones.set(key, false)
-                    if (field[key.y - 1][key.x] == '*' || field[key.y - 1][key.x] == '\\' || field[key.y - 1][key.x] == '@') {
-                        if (field[key.y][key.x + 1] == ' ' && field[key.y - 1][key.x + 1] == ' ') key.setNewPoint(key.x + 1, key.y - 1)
+                    if (field[key.y - 1][key.x] == '.' || field[key.y - 1][key.x] == '#') stones[key] = false
+                    if (field[key.y - 1][key.x] == '*' ||
+                            field[key.y - 1][key.x] == '\\' ||
+                            field[key.y - 1][key.x] == '@') {
+                        if (field[key.y][key.x + 1] == ' ' &&
+                                field[key.y - 1][key.x + 1] == ' ') key.setNewPoint(key.x + 1, key.y - 1)
                     }
-                    if (field[key.y][key.x + 1] == 'R') state = State.DEAD
+                    if (field[key.y][key.x + 1] == 'R') state = State.DEAD // раздавило
                 }
             }
+        }
+        if (fallingLambdaStones) {
             for (key in lambdaStones.keys) {
                 if (lambdaStones.getValue(key)) {
                     if (field[key.y - 1][key.x] == ' ') key.setNewPoint(key.x, key.y - 1)
@@ -90,93 +228,9 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
                 }
             }
         }
-        if (flooding > 0 && numberOfSteps == flooding) { // если установлена скорость прибывания воды и количество шагов равно ей, тогда поднять воду на 1 лвл и обнулить кол-во шагов
-            waterLevel++
-            numberOfSteps = 0
-        }
-        if (waterLevel >= robot.y) { // если робот в воде, уменьшаем вотерпруф
-            waterproof--
-        }
-        if (waterLevel < robot.y) { // если вынырнул - обновляем
-            waterproof = 10
-        }
-        if (waterproof >= 0) {
-            if (stones.containsKey(Point(robot.y + 1, robot.x)) || lambdaStones.containsKey(Point(robot.y + 1, robot.x))) { // если НАД текущем положением робота камень, то запускаем падение камня со след хода
-                stoneFalling = true
-                stones[Point(robot.y + 1, robot.x)] = true
-            }
-            if (field[robot.y][robot.x + 1] != '#' && field[robot.y][robot.x + 1] != '*' && field[robot.y][robot.x + 1] != 'W' && field[robot.y][robot.x + 1] != 'L') { // если след координата робота НЕ стена, НЕ камень, НЕ борода, НЕ закрытый лифт
-                when (field[robot.y][robot.x + 1]) {
-                    '.' -> { // земля
-                        field[robot.y][robot.x + 1] = ' '
-                        robot.setNewPoint(robot.x + 1, robot.y)
-                        score--
-                    }
-                    '\\' -> { // лямбда
-                        field[robot.y][robot.x + 1] = ' '
-                        robot.setNewPoint(robot.x + 1, robot.y)
-                        collectedLambdas++
-                        score += 24
-                    }
-                    '!' -> { // бритва
-                        field[robot.y][robot.x + 1] = ' '
-                        robot.setNewPoint(robot.x + 1, robot.y)
-                        razor++
-                        score--
-                    }
-                    'O' -> { // открытый лифт
-                        robot.setNewPoint(robot.x + 1, robot.y)
-                        score += 50 * collectedLambdas
-                        state = State.WON
-                        gameover()
-                    }
-                    else -> {
-                        robot.setNewPoint(robot.x + 1, robot.y)
-                        score--
-                    }
-                }
-            }
-            if (field[robot.y][robot.x + 1] == '*' && field[robot.y][robot.x + 2] == ' ') { // двигаем камень
-                //stoneMoveRight
-                robot.setNewPoint(robot.x + 1, robot.y)
-            }
-        }
-        if (waterproof < 0) {
-            state = State.DEAD
-            gameover()
-        }
+        if (!fallingStones && !fallingLambdaStones) isFalling = false
     }
 
-    // ЛЕВО НИЗ ВЕРХ ТОЖЕ САМОЕ ЧТО ПРАВО НАДО ОБЪЕДИНИТЬ Я ПОДУМАЮ
-    private fun goLeft() {
-        TODO()
-    }
-
-    private fun goUp() {
-        TODO()
-    }
-
-    private fun goDown() {
-        TODO()
-    }
-
-    private fun shave() {
-        TODO()
-    }
-
-    private fun waiting() {
-        score--
-    }
-
-    private fun abort() {
-        state = State.ABORTED
-        score += 25 * collectedLambdas
-        gameover()
-    }
-
-    //private fun stoneFalling(state : Boolean, startY : Int, startX : Int) {
-    //    TODO()
-    //}
     private fun gameover() {
         println(score)
     }
