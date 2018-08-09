@@ -75,22 +75,24 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
     }
 
     private fun go(move: Move) {
+        updateIndicators()
         if (waterproof >= 0) {
             if (stones.containsKey(Point(robot.y + 1, robot.x)) && move != Move.UP) { // если НАД текущем положением робота камень,
                 // то запускаем падение камня со след хода
                 isFalling = true
                 stones[Point(robot.y + 1, robot.x)] = true
+                falling(true, false)
             }
             if (lambdaStones.containsKey(Point(robot.y + 1, robot.x)) && move != Move.UP) {
                 isFalling = true
                 lambdaStones[Point(robot.y + 1, robot.x)] = true
+                falling(false, true)
             }
             val yPoint = robot.y + move.y
             val xPoint = robot.x + move.x
             if (field[yPoint][xPoint] != '#' &&
                     field[yPoint][xPoint] != 'W' &&
-                    field[yPoint][xPoint] != 'L') { // если след координата робота НЕ стена,
-                // НЕ борода, НЕ закрытый лифт
+                    field[yPoint][xPoint] != 'L') { // если след координата робота НЕ стена, НЕ борода, НЕ закрытый лифт
                 when (field[yPoint][xPoint]) {
                     '.' -> updateRobot(yPoint, xPoint) // земля
                     '\\' -> { // лямбда
@@ -115,7 +117,6 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
                 }
             } else {}
         }
-        updateIndicators()
     }
 
     // Добавить трамплины
@@ -182,14 +183,18 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
                         updateStoneMap(stones, key, Point(key.y - 1, key.x), true)
                         field[key.y - 1][key.x] = '*'
                     }
-                    if (field[key.y - 1][key.x] == '.' || field[key.y - 1][key.x] == '#') stones[key] = false
-                    if (field[key.y - 1][key.x] == '*' || field[key.y - 1][key.x] == '\\' || field[key.y - 1][key.x] == '@') {
+                    else if (field[key.y - 1][key.x] == '.' || field[key.y - 1][key.x] == '#') stones[key] = false
+                    else if (field[key.y - 1][key.x] == '*' || field[key.y - 1][key.x] == '\\' || field[key.y - 1][key.x] == '@') {
                         if (field[key.y][key.x + 1] == ' ' && field[key.y - 1][key.x + 1] == ' ') {
                             updateStoneMap(stones, key, Point(key.y - 1, key.x + 1), true)
                             field[key.y - 1][key.x + 1] = '*'
                         }
                     }
-                    if (field[key.y - 2][key.x] == 'R') state = State.DEAD // раздавило
+                    else if (field[key.y - 1][key.x] == 'R') {
+                        updateStoneMap(stones, key, Point(key.y - 1, key.x), true)
+                        field[key.y - 1][key.x] = '*'
+                        state = State.DEAD
+                    } // раздавило
                 }
             }
         }
@@ -205,11 +210,15 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
                         field[key.y][key.x] = ' '
                         field[key.y - 1][key.x] = '\\' // сделать там лямбду
                     }
-                    if (field[key.y - 1][key.x] == ' ') {
+                    else if (field[key.y - 1][key.x] == 'R') {
+                        updateStoneMap(lambdaStones, key, Point(key.y - 1, key.x), true)
+                        field[key.y - 1][key.x] = '@'
+                        state = State.DEAD
+                    }
+                    else if (field[key.y - 1][key.x] == ' ') {
                         updateStoneMap(lambdaStones, key, Point(key.y - 1, key.x), true)
                         field[key.y - 1][key.x] = '@'
                     }
-                    if (field[key.y - 2][key.x] == 'R') state = State.DEAD
                 }
             }
         }
@@ -226,7 +235,7 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
             updateStoneMap(map, oldPoint, newPoint, false)
             if (map == stones) field[yPoint][newXPoint] = '*' // появление камня на новой позиции
             else field[yPoint][newXPoint] = '@'
-            if (field[yPoint - 1][newXPoint] == ' ' ||
+            if (field[yPoint - 1][newXPoint] == ' ' || // это работает неправильно (см. текующую карту), пошла кушать)))))
                     field[yPoint - 1][newXPoint] == '*' ||
                     field[yPoint - 1][newXPoint] == '\\' ||
                     field[yPoint - 1][newXPoint] == '@') {
