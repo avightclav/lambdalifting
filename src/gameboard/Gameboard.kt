@@ -1,46 +1,79 @@
 package gameboard
 
-import java.io.BufferedReader
-import java.io.FileReader
+import java.io.File
 
-class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
+class Gameboard(inputField: String) {
 
-    val field = Array(height) { Array(width) { ' ' } }
-
-    private var stones: MutableMap<Point, Boolean> = mutableMapOf()
-    private var lambdaStones: MutableMap<Point, Boolean> = mutableMapOf()
-    private lateinit var trampolinesArray: ArrayList<Trampoline>
-    private lateinit var trampolines: HashMap<Trampoline, Trampoline>
+    private val field = mutableListOf<MutableList<Char>>()
+    private var stones = mutableMapOf<Point, Boolean>()
+    private var lambdaStones = mutableMapOf<Point, Boolean>()
+    private var trampolinesArray = arrayListOf<Trampoline>()
+    private var trampolines = hashMapOf<Trampoline, Trampoline>()
     private var robot = Point(-1, -1)
-    private val beard = Point(-1, -1)
-
-    init {
-        var j = height - 1
-        for (s in inputField.lines()) { //поменять систему координат
-            for ((k, c) in s.toCharArray().withIndex()) {
-                field[j][k] = c
-                when (c) {
-                    'R' -> robot.setNewPoint(j, k)
-                    '*' -> stones[Point(j, k)] = false
-                    '@' -> lambdaStones[Point(j, k)] = false
-                    'W' -> beard.setNewPoint(j, k)
-                    '1', '2', '3', '4', '5', '6', '7', '8', '9' -> trampolinesArray.add(Trampoline(c, Point(j, k)))
-                    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I' -> trampolinesArray.add(Trampoline(c, Point(j, k)))
-                }
-            }
-            j--
-        }
-    }
-
+    private val beards = mutableListOf<Point>()
     private var score = 0
     private var growth = 25 // количество шагов через которое вырастет борода
-    private var razor = 0
+    private var currentGrowth = 0
+    private var razors = 0
     private var flooding = 0    // скорость прибывания воды (количество шагов через которое вода поднимается на 1 уровень)
     private var waterLevel = 0   // уровень воды
     private var waterproof = 10 // сколько шагов без выныривания можно пройти
     private var numberOfSteps = 0
     private var collectedLambdas = 0
     private var isFalling = false // падают ща камни или не
+
+    init {
+        val lineList = mutableListOf<String>()
+        File(inputField).useLines { lines -> lines.forEach { lineList.add(it) } }
+        var j = -1
+        for (line in lineList) {
+            if (line != "") j++
+            else break
+        }
+        for (i in 0..j) field.add(mutableListOf())
+        for (line in lineList) {
+            if (j >= 0) {
+                for ((k, char) in line.toCharArray().withIndex()) {
+                    field[j].add(k, char)
+                    when (char) {
+                        'R' -> robot.setNewPoint(j, k)
+                        '*' -> stones[Point(j, k)] = false
+                        '@' -> lambdaStones[Point(j, k)] = false
+                        'W' -> beards.add(Point(j, k))
+                        '1', '2', '3', '4', '5', '6', '7', '8', '9' -> trampolinesArray.add(Trampoline(char, Point(j, k)))
+                        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I' -> trampolinesArray.add(Trampoline(char, Point(j, k)))
+                    }
+                }
+                j--
+            } else { // наверно, это можно сделать покрасивее
+                // добавить трамплины
+                var matchResult = Regex("""Growth (\d+)""").find(line)
+                if (matchResult != null) {
+                    growth = matchResult.groupValues[1].toInt()
+                } else {
+                    matchResult = Regex("""Razors (\d+)""").find(line)
+                    if (matchResult != null) {
+                        razors = matchResult.groupValues[1].toInt()
+                    } else {
+                        matchResult = Regex("""Water (\d+)""").find(line)
+                        if (matchResult != null) {
+                            waterLevel = matchResult.groupValues[1].toInt()
+                        } else {
+                            matchResult = Regex("""Flooding (\d+)""").find(line)
+                            if (matchResult != null) {
+                                flooding = matchResult.groupValues[1].toInt()
+                            } else {
+                                matchResult = Regex("""Waterproof (\d+)""").find(line)
+                                if (matchResult != null) {
+                                    waterproof = matchResult.groupValues[1].toInt()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     enum class State {
         LIVE,
@@ -102,7 +135,7 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
                     }
                     '!' -> { // бритва
                         updateRobot(yPoint, xPoint)
-                        razor++
+                        razors++
                     }
                     'O' -> { // открытый лифт
                         field[robot.y][robot.x] = ' '
@@ -121,9 +154,31 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
 
     // Добавить трамплины
 
+    private fun growBeard() {
+        val temporaryBeards: MutableList<Point> = mutableListOf()
+        for (beard in beards) {
+            for (y in (beard.y - 1)..(beard.y + 1))
+                for (x in (beard.x - 1)..(beard.x + 1))
+                    if (field[y][x] == ' ') {
+                        temporaryBeards.add(Point(y, x))
+                        field[y][x] = 'W'
+                    }
+        }
+        beards.addAll(temporaryBeards)
+    }
+
     private fun shave() {
-        razor--
-        // ??? Придумать как расти, чтобы понять как брить
+        updateIndicators()
+        if (razors > 0) {
+            razors--
+            for (y in (robot.y - 1)..(robot.y + 1))
+                for (x in (robot.x - 1)..(robot.x + 1)) {
+                    if (field[y][x] == 'W') {
+                        beards.remove(Point(y, x))
+                        field[y][x] = ' '
+                    }
+                }
+        }
     }
 
     private fun waiting() = updateIndicators()
@@ -137,6 +192,11 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
     private fun updateIndicators() {
         numberOfSteps++
         score--
+        currentGrowth++
+        if (currentGrowth == growth) {
+            growBeard()
+            currentGrowth = 0
+        }
         if (isFalling) {
             val fallingStones = stones.containsValue(true)
             val fallingLambdaStones = lambdaStones.containsValue(true)
@@ -256,6 +316,15 @@ class Gameboard(width: Int, height: Int, inputField: BufferedReader) {
         isFalling = false
         println(score)
     }
+
+    fun printField() {
+        for (i in (field.size - 1) downTo 0) {
+            for (j in 0..(field[i].size - 1))
+                print(field[i][j])
+            println()
+        }
+        println("Score: $score")
+    }
 }
 
 data class Point(var y: Int, var x: Int) {
@@ -268,7 +337,7 @@ data class Point(var y: Int, var x: Int) {
 data class Trampoline(val name: Char, val position: Point) {}
 
 fun main(args: Array<String>) {
-    val gbrd = Gameboard(7, 6, BufferedReader(FileReader("maps/map1")))
-    gbrd.act("R")
-    println(gbrd.field)
+    val gameboard = Gameboard("maps/beard1.map")
+    gameboard.act("WWWWWWWWWWWWWWW")
+    gameboard.printField()
 }
