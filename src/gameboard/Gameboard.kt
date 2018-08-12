@@ -7,8 +7,8 @@ class Gameboard(inputField: String) {
     private val field = mutableListOf<MutableList<Char>>()
     private var stones = mutableMapOf<Point, Boolean>()
     private var lambdaStones = mutableMapOf<Point, Boolean>()
-    private var trampolinesArray = arrayListOf<Trampoline>()
-    private var trampolines = hashMapOf<Trampoline, Trampoline>()
+    private var trampolinesPoints = mutableMapOf<Char, Point>() // координаты трамплинов
+    private var trampolines = mutableMapOf<Char, Char>() // какой трамплин куда ведёт
     private var robot = Point(-1, -1)
     private val beards = mutableListOf<Point>()
     private var score = 0
@@ -40,13 +40,12 @@ class Gameboard(inputField: String) {
                         '*' -> stones[Point(j, k)] = false
                         '@' -> lambdaStones[Point(j, k)] = false
                         'W' -> beards.add(Point(j, k))
-                        '1', '2', '3', '4', '5', '6', '7', '8', '9' -> trampolinesArray.add(Trampoline(char, Point(j, k)))
-                        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I' -> trampolinesArray.add(Trampoline(char, Point(j, k)))
+                        in 'A'..'I' -> trampolinesPoints[char] = Point(j, k)
+                        in '1'..'9' -> trampolinesPoints[char] = Point(j, k)
                     }
                 }
                 j--
             } else { // наверно, это можно сделать покрасивее
-                // добавить трамплины
                 var matchResult = Regex("""Growth (\d+)""").find(line)
                 if (matchResult != null) {
                     growth = matchResult.groupValues[1].toInt()
@@ -66,7 +65,13 @@ class Gameboard(inputField: String) {
                                 matchResult = Regex("""Waterproof (\d+)""").find(line)
                                 if (matchResult != null) {
                                     waterproof = matchResult.groupValues[1].toInt()
+                                } else {
+                                    matchResult = Regex("""Trampoline ([A-I]) targets (\d)""").find(line)
+                                    if (matchResult != null) {
+                                        trampolines[matchResult.groupValues[1][0]] = matchResult.groupValues[2][0]
+                                    }
                                 }
+
                             }
                         }
                     }
@@ -125,7 +130,8 @@ class Gameboard(inputField: String) {
             val xPoint = robot.x + move.x
             if (field[yPoint][xPoint] != '#' &&
                     field[yPoint][xPoint] != 'W' &&
-                    field[yPoint][xPoint] != 'L') { // если след координата робота НЕ стена, НЕ борода, НЕ закрытый лифт
+                    field[yPoint][xPoint] != 'L' &&
+                    field[yPoint][xPoint] !in '1'..'9') { // если след координата робота НЕ стена, НЕ борода, НЕ закрытый лифт, НЕ выход трамплина
                 when (field[yPoint][xPoint]) {
                     '.' -> updateRobot(yPoint, xPoint) // земля
                     '\\' -> { // лямбда
@@ -146,6 +152,23 @@ class Gameboard(inputField: String) {
                     }
                     '*' -> pushing(move, stones) // двигаем камни
                     '@' -> pushing(move, lambdaStones)
+                    in 'A'..'I' -> { // трамплин
+                        val char = field[yPoint][xPoint]
+                        val robotY = trampolinesPoints[trampolines[char]]!!.y
+                        val robotX = trampolinesPoints[trampolines[char]]!!.x
+                        val trampolinesToRemove = mutableListOf<Char>()
+                        field[trampolinesPoints[trampolines[char]]!!.y][trampolinesPoints[trampolines[char]]!!.x] = ' '
+                        for (entry in trampolines.entries) {
+                            if (entry.value == trampolines[char]) {
+                                trampolinesToRemove.add(entry.key)
+                                field[trampolinesPoints[entry.key]!!.y][trampolinesPoints[entry.key]!!.x] = ' '
+                            }
+                        }
+                        for (trampolineToRemove in trampolinesToRemove) {
+                            trampolines.remove(trampolineToRemove)
+                        }
+                        updateRobot(robotY, robotX)
+                    }
                     else -> updateRobot(yPoint, xPoint)
                 }
             } else {}
@@ -334,10 +357,12 @@ data class Point(var y: Int, var x: Int) {
     }
 }
 
-data class Trampoline(val name: Char, val position: Point) {}
-
 fun main(args: Array<String>) {
-    val gameboard = Gameboard("maps/beard1.map")
-    gameboard.act("WWWWWWWWWWWWWWW")
+    //val gameboard = Gameboard("maps/beard1.map")
+    //gameboard.act("WWWWWWWWWWWWWWW")
+    //gameboard.printField()
+
+    val gameboard = Gameboard("maps/trampoline1.map")
+    gameboard.act("DLLU")
     gameboard.printField()
 }
