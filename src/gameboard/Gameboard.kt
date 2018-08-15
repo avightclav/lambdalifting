@@ -5,8 +5,8 @@ import java.io.File
 class Gameboard(inputField: String) {
 
     private val field = mutableListOf<MutableList<Char>>()
-    private var stones = mutableMapOf<Point, Boolean>()
-    private var lambdaStones = mutableMapOf<Point, Boolean>()
+    private var stones = ArrayList<Point>()
+    private var lambdaStones = ArrayList<Point>()
     private var trampolinesPoints = mutableMapOf<Char, Point>() // координаты трамплинов
     private var trampolines = mutableMapOf<Char, Char>() // какой трамплин куда ведёт
     private var robot = Point(-1, -1)
@@ -20,7 +20,8 @@ class Gameboard(inputField: String) {
     private var waterproof = 10 // сколько шагов без выныривания можно пройти
     private var numberOfSteps = 0
     private var collectedLambdas = 0
-    private var isFalling = false // падают ща камни или не
+    private var allLambdas = 0
+    private var lift = Point(-1, -1)
 
     init {
         val lineList = mutableListOf<String>()
@@ -37,9 +38,14 @@ class Gameboard(inputField: String) {
                     field[j].add(k, char)
                     when (char) {
                         'R' -> robot.setNewPoint(j, k)
-                        '*' -> stones[Point(j, k)] = false
-                        '@' -> lambdaStones[Point(j, k)] = false
+                        '*' -> stones.add(Point(j, k))
+                        '@' -> {
+                            lambdaStones.add(Point(j, k))
+                            allLambdas++
+                        }
                         'W' -> beards.add(Point(j, k))
+                        '\\' -> allLambdas++
+                        'L' -> lift.setNewPoint(j, k)
                         in 'A'..'I' -> trampolinesPoints[char] = Point(j, k)
                         in '1'..'9' -> trampolinesPoints[char] = Point(j, k)
                     }
@@ -113,25 +119,21 @@ class Gameboard(inputField: String) {
     }
 
     private fun go(move: Move) {
-        updateIndicators()
         if (waterproof >= 0) {
-            if (stones.containsKey(Point(robot.y + 1, robot.x)) && move != Move.UP) { // если НАД текущем положением робота камень,
-                // то запускаем падение камня со след хода
-                isFalling = true
-                stones[Point(robot.y + 1, robot.x)] = true
-                falling(true, false)
-            }
-            if (lambdaStones.containsKey(Point(robot.y + 1, robot.x)) && move != Move.UP) {
-                isFalling = true
-                lambdaStones[Point(robot.y + 1, robot.x)] = true
-                falling(false, true)
-            }
             val yPoint = robot.y + move.y
             val xPoint = robot.x + move.x
             if (field[yPoint][xPoint] != '#' &&
                     field[yPoint][xPoint] != 'W' &&
                     field[yPoint][xPoint] != 'L' &&
-                    field[yPoint][xPoint] !in '1'..'9') { // если след координата робота НЕ стена, НЕ борода, НЕ закрытый лифт, НЕ выход трамплина
+                    (field[yPoint][xPoint] != '1' ||
+                    field[yPoint][xPoint] != '2' ||
+                    field[yPoint][xPoint] != '3' ||
+                    field[yPoint][xPoint] != '4' ||
+                    field[yPoint][xPoint] != '5' ||
+                    field[yPoint][xPoint] != '6' ||
+                    field[yPoint][xPoint] != '7' ||
+                    field[yPoint][xPoint] != '8' ||
+                    field[yPoint][xPoint] != '9')) { // если след координата робота НЕ стена, НЕ борода, НЕ закрытый лифт, НЕ выход трамплина
                 when (field[yPoint][xPoint]) {
                     '.' -> updateRobot(yPoint, xPoint) // земля
                     '\\' -> { // лямбда
@@ -146,12 +148,10 @@ class Gameboard(inputField: String) {
                     'O' -> { // открытый лифт
                         field[robot.y][robot.x] = ' '
                         robot.setNewPoint(yPoint, xPoint)
-                        score += 50 * collectedLambdas
                         state = State.WON
-                        gameover()
                     }
-                    '*' -> pushing(move, stones) // двигаем камни
-                    '@' -> pushing(move, lambdaStones)
+                    '*' -> pushing(move, stones, stones.indexOf(Point(yPoint, xPoint))) // двигаем камни
+                    '@' -> pushing(move, lambdaStones, lambdaStones.indexOf(Point(yPoint, xPoint)))
                     in 'A'..'I' -> { // трамплин
                         val char = field[yPoint][xPoint]
                         val robotY = trampolinesPoints[trampolines[char]]!!.y
@@ -171,11 +171,11 @@ class Gameboard(inputField: String) {
                     }
                     else -> updateRobot(yPoint, xPoint)
                 }
-            } else {}
+            }
+            else {}
         }
+        updateIndicators()
     }
-
-    // Добавить трамплины
 
     private fun growBeard() {
         val temporaryBeards: MutableList<Point> = mutableListOf()
@@ -216,14 +216,10 @@ class Gameboard(inputField: String) {
         numberOfSteps++
         score--
         currentGrowth++
+        falling()
         if (currentGrowth == growth) {
             growBeard()
             currentGrowth = 0
-        }
-        if (isFalling) {
-            val fallingStones = stones.containsValue(true)
-            val fallingLambdaStones = lambdaStones.containsValue(true)
-            falling(fallingStones, fallingLambdaStones)
         }
         if (flooding > 0 && numberOfSteps == flooding) { // если установлена скорость прибывания воды и
             // количество шагов равно ей, тогда поднять воду на 1 лвл и обнулить кол-во шагов
@@ -236,9 +232,8 @@ class Gameboard(inputField: String) {
         if (waterLevel < robot.y) { // если вынырнул - обновляем
             waterproof = 10
         }
-        if (waterproof < 0) {
-            state = State.DEAD
-        } // утонул
+        if (waterproof < 0) state = State.DEAD
+        if (collectedLambdas == allLambdas) field[lift.y][lift.x] = 'O'
         if (state == State.DEAD) gameover()
         if (state == State.WON) {
             score += 50 * collectedLambdas
@@ -246,88 +241,77 @@ class Gameboard(inputField: String) {
         }
     }
 
-    private fun updateStoneMap(map: MutableMap<Point, Boolean>, oldPoint: Point, newPoint: Point, stoneState: Boolean) {
-        map.remove(oldPoint)
-        field[oldPoint.y][oldPoint.x] = ' '
-        map[newPoint] = stoneState
-    }
-
     private fun updateRobot(newY: Int, newX: Int) {
-        field[robot.y][robot.x] = ' '
         field[newY][newX] = 'R'
+        field[robot.y][robot.x] = ' '
         robot.setNewPoint(newY, newX)
     }
 
-    private fun falling(fallingStones: Boolean, fallingLambdaStones: Boolean) { // chtobi dvigat kamni nado dumat kak kamen
-        if (fallingStones) {
-            for (key in stones.keys) { // проходим по всем ключам в камнях
-                if (stones.getValue(key)) { // если по какому-то из ключей значение тру - падаем
-                    if (field[key.y - 1][key.x] == ' ') { // если ниже пусто
-                        updateStoneMap(stones, key, Point(key.y - 1, key.x), true)
-                        field[key.y - 1][key.x] = '*'
+    private fun falling() { // chtobi dvigat kamni nado dumat kak kamen
+        for (i in 0 until stones.size) {
+            val currentStone = stones.get(i)
+            val cellUnderStone = field[currentStone.y - 1][currentStone.x]
+            when (cellUnderStone) {
+                ' ' -> {
+                    field[currentStone.y][currentStone.x] = ' '
+                    field[currentStone.y - 1][currentStone.x] = '*'
+                    stones.set(i, Point(currentStone.y - 1, currentStone.x))
+                    if (Point(currentStone.y - 2, currentStone.x) == robot) state = State.DEAD
+                }
+                '\\', '*', '@' -> {
+                    if (field[currentStone.y][currentStone.x + 1] == ' ' && field[currentStone.y - 1][currentStone.x + 1] == ' ') {
+                        field[currentStone.y][currentStone.x] = ' '
+                        field[currentStone.y - 1][currentStone.x + 1] = '*'
+                        stones.set(i, Point(currentStone.y - 1, currentStone.x + 1))
+                        if (Point(currentStone.y - 2, currentStone.x + 1) == robot) state = State.DEAD
                     }
-                    else if (field[key.y - 1][key.x] == '.' || field[key.y - 1][key.x] == '#') stones[key] = false
-                    else if (field[key.y - 1][key.x] == '*' || field[key.y - 1][key.x] == '\\' || field[key.y - 1][key.x] == '@') {
-                        if (field[key.y][key.x + 1] == ' ' && field[key.y - 1][key.x + 1] == ' ') {
-                            updateStoneMap(stones, key, Point(key.y - 1, key.x + 1), true)
-                            field[key.y - 1][key.x + 1] = '*'
+                }
+            }
+        }
+        for (i in 0 until lambdaStones.size) {
+            val currentStone = lambdaStones.get(i)
+            val cellUnderStone = field[currentStone.y - 1][currentStone.x]
+            when (cellUnderStone) {
+                ' ' -> {
+                    if (field[currentStone.y - 2][currentStone.x] != ' ' && field[currentStone.y - 1][currentStone.x] != 'R') { // разбиение
+                        field[currentStone.y][currentStone.x] = ' '
+                        field[currentStone.y - 1][currentStone.x] = '\\'
+                        lambdaStones.set(i, Point(field.size - 1, 0)) //поставить в верхний левый угол
+                    } else { // падение
+                        field[currentStone.y][currentStone.x] = ' '
+                        field[currentStone.y - 1][currentStone.x] = '@'
+                        lambdaStones.set(i, Point(currentStone.y - 1, currentStone.x))
+                        if (Point(currentStone.y - 2, currentStone.x) == robot) state = State.DEAD
+                    }
+                }
+                '\\', '*', '@' -> {
+                    if (field[currentStone.y][currentStone.x + 1] == ' ' && field[currentStone.y - 1][currentStone.x + 1] == ' ') {
+                        field[currentStone.y][currentStone.x] = ' '
+                        field[currentStone.y - 1][currentStone.x + 1] = '@'
+                        lambdaStones.set(i, Point(currentStone.y - 1, currentStone.x + 1))
+                        if (Point(currentStone.y - 2, currentStone.x + 1) == robot) state = State.DEAD
+                        else if (field[currentStone.y - 2][currentStone.x + 1] != ' ') { // разбиение
+                            field[currentStone.y - 1][currentStone.x + 1] = ' '
+                            field[currentStone.y - 1][currentStone.x + 1] = '\\'
+                            lambdaStones.set(i, Point(field.size - 1, 0)) //поставить в верхний левый угол
                         }
                     }
-                    else if (field[key.y - 1][key.x] == 'R') {
-                        updateStoneMap(stones, key, Point(key.y - 1, key.x), true)
-                        field[key.y - 1][key.x] = '*'
-                        state = State.DEAD
-                    } // раздавило
                 }
             }
         }
-        if (fallingLambdaStones) {
-            for (key in lambdaStones.keys) {
-                if (lambdaStones.getValue(key)) {
-                    if (field[key.y - 2][key.x] == '.' ||
-                            field[key.y - 2][key.x] == '#' ||
-                            field[key.y - 2][key.x] == '*' ||
-                            field[key.y - 2][key.x] == '\\' ||
-                            field[key.y - 2][key.x] == '@') {
-                        lambdaStones.remove(key) // разбился - делит
-                        field[key.y][key.x] = ' '
-                        field[key.y - 1][key.x] = '\\' // сделать там лямбду
-                    }
-                    else if (field[key.y - 1][key.x] == 'R') {
-                        updateStoneMap(lambdaStones, key, Point(key.y - 1, key.x), true)
-                        field[key.y - 1][key.x] = '@'
-                        state = State.DEAD
-                    }
-                    else if (field[key.y - 1][key.x] == ' ') {
-                        updateStoneMap(lambdaStones, key, Point(key.y - 1, key.x), true)
-                        field[key.y - 1][key.x] = '@'
-                    }
-                }
-            }
-        }
-        if (!fallingStones && !fallingLambdaStones) isFalling = false
     }
 
-    private fun pushing(move: Move, map: MutableMap<Point, Boolean>) {
+    private fun pushing(move: Move, array: ArrayList<Point>, i: Int) {
         val yPoint = robot.y + move.y
         val xPoint = robot.x + move.x
         val newXPoint = robot.x + 2 * move.x
         if (field[yPoint][newXPoint] == ' ' && (move == Move.RIGHT || move == Move.LEFT)) {
             val oldPoint = Point(yPoint, xPoint)
             val newPoint = Point(yPoint, newXPoint)
-            updateStoneMap(map, oldPoint, newPoint, false)
-            if (map == stones) field[yPoint][newXPoint] = '*' // появление камня на новой позиции
+            field[oldPoint.y][oldPoint.x] = ' '
+            array.set(i, newPoint)
+            if (array == stones) field[yPoint][newXPoint] = '*' // появление камня на новой позиции
             else field[yPoint][newXPoint] = '@'
-            if (field[yPoint - 1][newXPoint] == ' ' || // это работает неправильно (см. текующую карту), пошла кушать)))))
-                    field[yPoint - 1][newXPoint] == '*' ||
-                    field[yPoint - 1][newXPoint] == '\\' ||
-                    field[yPoint - 1][newXPoint] == '@') {
-                isFalling = true
-                val nextNewPoint = Point(yPoint - 1, newXPoint)
-                updateStoneMap(map, newPoint, nextNewPoint, true)
-                if (map == stones) field[yPoint - 1][newXPoint] = '*' // появление камня на новой позиции
-                else field[yPoint - 1][newXPoint] = '@'
-            }
             updateRobot(yPoint, xPoint)
         } else {
         }
@@ -336,7 +320,6 @@ class Gameboard(inputField: String) {
     private fun gameover() {
         stones.clear()
         lambdaStones.clear()
-        isFalling = false
         println(score)
     }
 
@@ -347,6 +330,7 @@ class Gameboard(inputField: String) {
             println()
         }
         println("Score: $score")
+        println("State: $state")
     }
 }
 
@@ -362,7 +346,7 @@ fun main(args: Array<String>) {
     //gameboard.act("WWWWWWWWWWWWWWW")
     //gameboard.printField()
 
-    val gameboard = Gameboard("maps/trampoline1.map")
-    gameboard.act("DLLU")
+    val gameboard = Gameboard("maps/contest1.map")
+    gameboard.act("")
     gameboard.printField()
 }
