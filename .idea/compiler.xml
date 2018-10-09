@@ -9,5 +9,8 @@
         <module name="lambdalifting" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="lambdalifting" target="1.5" />
+    </bytecodeTargetLevel>
   </component>
 </project>
