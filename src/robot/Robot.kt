@@ -13,6 +13,7 @@ class Robot(inputField: String) {
     private var score = gameboard.getScore()
     private val lift = gameboard.getLift()
     private var listOfLambdas = gameboard.getListOfLambdas()
+    private var listOfUnreachableLambdas = mutableListOf<Point>()
     private val listOfChanges = mutableListOf<Change>()
     private var globalPath = ""
 
@@ -37,7 +38,7 @@ class Robot(inputField: String) {
                 for (i in (y - 1)..(y + 1))
                     for (j in (x - 1)..(x + 1))
                         if (i == y || j == x) {
-                            if (distances[i][j] == Int.MAX_VALUE && (field[i][j] == ' ' || field[i][j] == '.' || field[i][j] == '\\' || field[i][j] == 'O')) {
+                            if (distances[i][j] == Int.MAX_VALUE && (field[i][j] == ' ' || field[i][j] == '.' || field[i][j] == '\\' || field[i][j] == 'O' || field[i][j] == '!')) {
                                 distances[i][j] = distance + 1
                                 temporaryPoints.add(Point(i, j))
                             } //else if (distances[i][j] == Int.MAX_VALUE && ((j == x + 1) && field[i][j] == '*' && field[i][j + 1] == ' ' ||
@@ -143,27 +144,102 @@ class Robot(inputField: String) {
     private fun getNearestLambda(): Point {
         var distance = Integer.MAX_VALUE
         var result = Point(0, 0)
+        val initialPoint = if (gameboard.getFlooding() > 0) Point(0,0) else Point(robot.y, robot.x)
         for (lambda in listOfLambdas) {
-            if ((abs(lambda.x - robot.x) + abs(lambda.y - robot.y)) < distance) {
+            if (!listOfUnreachableLambdas.contains(lambda) && (abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)) < distance) {
                 result = Point(lambda.y, lambda.x)
-                distance = abs(lambda.x - robot.x) + abs(lambda.y - robot.y)
+                distance = abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)
             }
         }
         return result
     }
 
+    private fun isUnderStone() = field[robot.y + 1][robot.x] == '*'
+
+    private fun isRightUnderStone() = (field[robot.y + 1][robot.x - 1] == '*' && (field[robot.y][robot.x - 1] == '*' || field[robot.y][robot.x - 1] == '\\') )
+
+    private fun isLeftUnderStone() = (field[robot.y + 1][robot.x + 1] == '*' && field[robot.y][robot.x + 1] == '*' )
+
+    private fun isLambdaUnreachable(lambda: Point): Boolean {
+        val x = lambda.x
+        val y = lambda.y
+        return (field[y + 1][x] == '*' && !(field[y][x + 1] == ' ' || field[y][x + 1] == '.' || field[y][x + 1] == '\\' || field[y][x + 1] == 'O' || field[y][x + 1] == '!' || field[y][x + 1] == 'R')
+                && !(field[y][x - 1] == ' ' || field[y][x - 1] == '.' || field[y][x - 1] == '\\' || field[y][x - 1] == 'O' || field[y][x - 1] == '!'  || field[y][x - 1] == 'R'))
+    }
+
     fun go(): String {
         var i = 0
         while (i < 10000) {
-            val currentPath = if (listOfLambdas.isEmpty()) findPathToPoint(lift) else
-                findPathToPoint(getNearestLambda())
+            val nearestLambda = getNearestLambda()
+            //println(nearestLambda)
+            if (isLambdaUnreachable(nearestLambda)) {
+                listOfUnreachableLambdas.add(nearestLambda)
+                continue
+            }
+            var currentPath: String
+            if (listOfLambdas.isEmpty()) currentPath = findPathToPoint(lift) else {
+                currentPath = findPathToPoint(nearestLambda)
+                if (currentPath == "NOPATH") listOfUnreachableLambdas.add(nearestLambda)
+            }
             val numberOfLambdas = listOfLambdas.size
-            var numberOfLambdas1 = listOfLambdas.size
+            var numberOfLambdas1: Int
+           // println(currentPath)
             for (move in currentPath) {
                 if (canMakeMove().contains(move)) {
-                    gameboard.act(move.toString())
-                    globalPath += move
+                    if (isUnderStone() && move == 'D') {
+                        if (canMakeMove().contains('R')) {
+                            gameboard.act("R")
+                            globalPath += 'R'
+                            updateField()
+                            break
+                        } else if (canMakeMove().contains('L')) {
+                            if (canMakeMove().contains('L')) gameboard.act("L")
+                            globalPath += 'L'
+                            updateField()
+                            break
+                        } else {
+                            globalPath += 'A'
+                            return globalPath
+                        }
+                    } else if (isLeftUnderStone() && move == 'D') {
+                        if (canMakeMove().contains('U')) {
+                            gameboard.act("U")
+                            globalPath += 'U'
+                            updateField()
+                            if (canMakeMove().contains('L')) {
+                                gameboard.act("L")
+                                globalPath += 'L'
+                                updateField()
+                            } else if (canMakeMove().contains('U')) {
+                                gameboard.act("U")
+                                globalPath += 'U'
+                                updateField()
+                            }
+                            break
+                        }
+                    } else if (isRightUnderStone() && move == 'D') {
+                        if (canMakeMove().contains('U')) {
+                            gameboard.act("U")
+                            globalPath += 'U'
+                            updateField()
+                            if (canMakeMove().contains('R')) {
+                                gameboard.act("R")
+                                globalPath += 'R'
+                                updateField()
+                            } else if (canMakeMove().contains('U')) {
+                                gameboard.act("U")
+                                globalPath += 'U'
+                                updateField()
+                            }
+                            break
+                        }
+                    } else {
+                        gameboard.act(move.toString())
+                        globalPath += move
+                    }
                     updateField()
+                    val newNearestLambda = getNearestLambda()
+                    if (newNearestLambda != nearestLambda) break
                 } else break
                 numberOfLambdas1 = listOfLambdas.size
                 if (numberOfLambdas1 != numberOfLambdas) break

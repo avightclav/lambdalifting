@@ -360,6 +360,10 @@ class Gameboard(inputField: String) {
         //println(score)
     }
 
+    fun getFlooding(): Int {
+        return flooding
+    }
+
     fun getScore(): Int {
         return score
     }
