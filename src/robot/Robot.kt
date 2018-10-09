@@ -17,7 +17,10 @@ class Robot(inputField: String) {
     private var globalPath = ""
 
     private fun findPathToPoint(point: Point): String {
-        val distances = Array(field.size) { Array(field[0].size) { Int.MAX_VALUE } }
+        var fieldHeight = 0
+        for (k in 0..(field.size - 1))
+            if (field[k].size > fieldHeight) fieldHeight = field[k].size
+        val distances = Array(field.size) { Array(fieldHeight) { Int.MAX_VALUE } }
         distances[robot.y][robot.x] = 0
         distances[point.y][point.x] = -1
         val points = mutableListOf(robot)
@@ -37,7 +40,11 @@ class Robot(inputField: String) {
                             if (distances[i][j] == Int.MAX_VALUE && (field[i][j] == ' ' || field[i][j] == '.' || field[i][j] == '\\' || field[i][j] == 'O')) {
                                 distances[i][j] = distance + 1
                                 temporaryPoints.add(Point(i, j))
-                            }
+                            } //else if (distances[i][j] == Int.MAX_VALUE && ((j == x + 1) && field[i][j] == '*' && field[i][j + 1] == ' ' ||
+                            //        (j == x - 1) && field[i][j] == '*' && field[i][j - 1] == ' ')) {
+                            //    distances[i][j] = distance + 1
+                            //    temporaryPoints.add(Point(i, j))
+                            //}
                             if (distances[i][j] == -1) {
                                 distances[i][j] = distance + 1
                                 isPointReached = true
@@ -47,9 +54,13 @@ class Robot(inputField: String) {
             points.clear()
             points.addAll(temporaryPoints)
             distance++
-            var fieldHeight = 0
-            for (k in 0..(field.size - 1))
-                if (field[k].size > fieldHeight) fieldHeight = field[k].size
+           //  for (i in (field.size - 1) downTo 0) {
+           //     for (j in 0..(field[i].size - 1))
+           //         if (distances[i][j] == Integer.MAX_VALUE) print("-") else
+           //             if (distances[i][j] == -1) print("&") else print(distances[i][j])
+           //     println()
+           // }
+           // println()
             if (distance > (field.size * fieldHeight)) return("NOPATH")
         }
 
@@ -82,7 +93,9 @@ class Robot(inputField: String) {
     }
 
     private fun updateField() {
-        oldField = field
+        for (i in 0..(field.size - 1))
+            for (j in 0..(field[i].size - 1))
+                oldField[i][j] = field[i][j]
         field = gameboard.getField()
         robot = gameboard.getRobot()
         score = gameboard.getScore()
@@ -144,15 +157,19 @@ class Robot(inputField: String) {
         while (i < 10000) {
             val currentPath = if (listOfLambdas.isEmpty()) findPathToPoint(lift) else
                 findPathToPoint(getNearestLambda())
+            val numberOfLambdas = listOfLambdas.size
+            var numberOfLambdas1 = listOfLambdas.size
             for (move in currentPath) {
                 if (canMakeMove().contains(move)) {
                     gameboard.act(move.toString())
                     globalPath += move
                     updateField()
                 } else break
+                numberOfLambdas1 = listOfLambdas.size
+                if (numberOfLambdas1 != numberOfLambdas) break
             }
             if (gameboard.getState() == Gameboard.State.WON) return globalPath
-            if (isLiftBlocked() || isRobotBlocked() || gameboard.getState() == Gameboard.State.DEAD) {
+            if (listOfLambdas.isEmpty() && isLiftBlocked() || isRobotBlocked() || gameboard.getState() == Gameboard.State.DEAD) {
                 var step = 0
                 var maxScore = 0
                 for (k in 0 until listOfChanges.size) {

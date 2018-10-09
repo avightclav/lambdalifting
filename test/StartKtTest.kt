@@ -10,5 +10,6 @@ internal class StartKtTest {
         start("maps/contest5.map")
         start("maps/contest6.map")
         start("maps/contest7.map")
+        start("maps/contest8.map")
     }
 }
