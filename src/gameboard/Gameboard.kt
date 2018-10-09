@@ -360,6 +360,10 @@ class Gameboard(inputField: String) {
         //println(score)
     }
 
+    fun getFlooding(): Int {
+        return flooding
+    }
+
     fun getScore(): Int {
         return score
     }
@@ -380,7 +384,7 @@ class Gameboard(inputField: String) {
         return lift
     }
 
-    fun getListOfLambdas(): List<Point> {
+    fun getListOfLambdas(): MutableList<Point> {
         val listOfLambdas = mutableListOf<Point>()
         for (i in 0..(field.size - 1))
             for (j in 0..(field[i].size - 1))
