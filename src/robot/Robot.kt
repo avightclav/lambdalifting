@@ -16,23 +16,29 @@ class Robot(inputField: String) {
     private var listOfUnreachableLambdas = mutableListOf<Point>()
     private val listOfChanges = mutableListOf<Change>()
     private var globalPath = ""
+    private var fieldHeight = 0
 
-    private fun findPathToPoint(point: Point): String {
-        var fieldHeight = 0
+    init {
         for (k in 0..(field.size - 1))
             if (field[k].size > fieldHeight) fieldHeight = field[k].size
+    }
+
+    private fun findPathToPoint(points: List<Point>): Pair<Point, String> {
         val distances = Array(field.size) { Array(fieldHeight) { Int.MAX_VALUE } }
         distances[robot.y][robot.x] = 0
-        distances[point.y][point.x] = -1
-        val points = mutableListOf(robot)
+        for (point in points) {
+            distances[point.y][point.x] = -1
+        }
+        val waveFront = mutableListOf(robot)
         var path = ""
         var distance = 0
         var y: Int
         var x: Int
         var isPointReached = false
+        var nearestPoint = Point(-1, -1)
         while (!isPointReached) {
             val temporaryPoints = mutableListOf<Point>()
-            for (currentPoint in points) {
+            for (currentPoint in waveFront) {
                 y = currentPoint.y
                 x = currentPoint.x
                 for (i in (y - 1)..(y + 1))
@@ -41,33 +47,23 @@ class Robot(inputField: String) {
                             if (distances[i][j] == Int.MAX_VALUE && (field[i][j] == ' ' || field[i][j] == '.' || field[i][j] == '\\' || field[i][j] == 'O' || field[i][j] == '!')) {
                                 distances[i][j] = distance + 1
                                 temporaryPoints.add(Point(i, j))
-                            } //else if (distances[i][j] == Int.MAX_VALUE && ((j == x + 1) && field[i][j] == '*' && field[i][j + 1] == ' ' ||
-                            //        (j == x - 1) && field[i][j] == '*' && field[i][j - 1] == ' ')) {
-                            //    distances[i][j] = distance + 1
-                            //    temporaryPoints.add(Point(i, j))
-                            //}
+                            }
                             if (distances[i][j] == -1) {
                                 distances[i][j] = distance + 1
                                 isPointReached = true
+                                nearestPoint = Point(i, j)
                             }
                         }
             }
-            points.clear()
-            points.addAll(temporaryPoints)
+            waveFront.clear()
+            waveFront.addAll(temporaryPoints)
             distance++
-           //  for (i in (field.size - 1) downTo 0) {
-           //     for (j in 0..(field[i].size - 1))
-           //         if (distances[i][j] == Integer.MAX_VALUE) print("-") else
-           //             if (distances[i][j] == -1) print("&") else print(distances[i][j])
-           //     println()
-           // }
-           // println()
-            if (distance > (field.size * fieldHeight)) return("NOPATH")
+            if (distance > (field.size * fieldHeight)) return Pair(points[0], "NOPATH")
         }
 
         var isPathBuilt = false
-        y = point.y
-        x = point.x
+        y = nearestPoint.y
+        x = nearestPoint.x
         while (!isPathBuilt) {
             when {
                 y > 0 && distances[y - 1][x] == distance - 1 -> {
@@ -90,7 +86,7 @@ class Robot(inputField: String) {
             distance--
             if (distance == 0) isPathBuilt = true
         }
-        return path
+        return Pair(nearestPoint, path)
     }
 
     private fun updateField() {
@@ -101,6 +97,7 @@ class Robot(inputField: String) {
         robot = gameboard.getRobot()
         score = gameboard.getScore()
         listOfLambdas = gameboard.getListOfLambdas()
+        listOfLambdas.removeAll(listOfUnreachableLambdas)
         listOfChanges.add(Change(globalPath, score, getChangedPoints()))
     }
 
@@ -114,7 +111,7 @@ class Robot(inputField: String) {
         var result = ""
         if (field[robot.y][robot.x + 1] == ' ' || field[robot.y][robot.x + 1] == '.' || field[robot.y][robot.x + 1] == 'O'
                 || field[robot.y][robot.x + 1] == '\\' || field[robot.y][robot.x + 1] == '*' && field[robot.y][robot.x + 2] == ' ')
-                result += 'R'
+            result += 'R'
         if (field[robot.y][robot.x - 1] == ' ' || field[robot.y][robot.x - 1] == '.' || field[robot.y][robot.x - 1] == 'O'
                 || field[robot.y][robot.x - 1] == '\\' || field[robot.y][robot.x - 1] == '*' && field[robot.y][robot.x - 2] == ' ')
             result += 'L'
@@ -129,7 +126,7 @@ class Robot(inputField: String) {
 
     private fun isRobotBlocked() = canMakeMove() == ""
 
-    private fun isLiftBlocked() = findPathToPoint(lift) == "NOPATH"
+    private fun isLiftBlocked() = findPathToPoint(listOf(lift)).second == "NOPATH"
 
     private fun getChangedPoints(): MutableMap<Point, Char> {
         val result = mutableMapOf<Point, Char>()
@@ -141,49 +138,50 @@ class Robot(inputField: String) {
         return result
     }
 
-    private fun getNearestLambda(): Point {
-        var distance = Integer.MAX_VALUE
-        var result = Point(0, 0)
-        val initialPoint = if (gameboard.getFlooding() > 0) Point(0,0) else Point(robot.y, robot.x)
-        for (lambda in listOfLambdas) {
-            if (!listOfUnreachableLambdas.contains(lambda) && (abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)) < distance) {
-                result = Point(lambda.y, lambda.x)
-                distance = abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)
-            }
-        }
-        return result
-    }
+//    private fun getNearestLambda(): Point {
+//        var distance = Integer.MAX_VALUE
+//        var result = Point(0, 0)
+//        val initialPoint = if (gameboard.getFlooding() > 0) Point(0, 0) else Point(robot.y, robot.x)
+//        for (lambda in listOfLambdas) {
+//            if (!listOfUnreachableLambdas.contains(lambda) && (abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)) < distance) {
+//                result = Point(lambda.y, lambda.x)
+//                distance = abs(lambda.x - initialPoint.x) + abs(lambda.y - initialPoint.y)
+//            }
+//        }
+//        return result
+//    }
 
     private fun isUnderStone() = field[robot.y + 1][robot.x] == '*'
 
-    private fun isRightUnderStone() = (field[robot.y + 1][robot.x - 1] == '*' && (field[robot.y][robot.x - 1] == '*' || field[robot.y][robot.x - 1] == '\\') )
+    private fun isRightUnderStone() = (field[robot.y + 1][robot.x - 1] == '*' && (field[robot.y][robot.x - 1] == '*' || field[robot.y][robot.x - 1] == '\\'))
 
-    private fun isLeftUnderStone() = (field[robot.y + 1][robot.x + 1] == '*' && field[robot.y][robot.x + 1] == '*' )
+    private fun isLeftUnderStone() = (field[robot.y + 1][robot.x + 1] == '*' && field[robot.y][robot.x + 1] == '*')
 
     private fun isLambdaUnreachable(lambda: Point): Boolean {
         val x = lambda.x
         val y = lambda.y
         return (field[y + 1][x] == '*' && !(field[y][x + 1] == ' ' || field[y][x + 1] == '.' || field[y][x + 1] == '\\' || field[y][x + 1] == 'O' || field[y][x + 1] == '!' || field[y][x + 1] == 'R')
-                && !(field[y][x - 1] == ' ' || field[y][x - 1] == '.' || field[y][x - 1] == '\\' || field[y][x - 1] == 'O' || field[y][x - 1] == '!'  || field[y][x - 1] == 'R'))
+                && !(field[y][x - 1] == ' ' || field[y][x - 1] == '.' || field[y][x - 1] == '\\' || field[y][x - 1] == 'O' || field[y][x - 1] == '!' || field[y][x - 1] == 'R'))
     }
 
     fun go(): String {
         var i = 0
         while (i < 10000) {
-            val nearestLambda = getNearestLambda()
-            //println(nearestLambda)
-            if (isLambdaUnreachable(nearestLambda)) {
-                listOfUnreachableLambdas.add(nearestLambda)
-                continue
+
+            val result = if (listOfLambdas.isEmpty() && listOfUnreachableLambdas.isEmpty()) findPathToPoint(listOf(lift)) else findPathToPoint(listOfLambdas)
+
+            val currentPath = result.second
+            val nearestPoint = result.first
+
+            if (currentPath == "NOPATH" || isLambdaUnreachable(nearestPoint) && nearestPoint != lift) {
+                listOfUnreachableLambdas.add(nearestPoint)
+                listOfLambdas.remove(nearestPoint)
+                if (!listOfLambdas.isEmpty()) continue
             }
-            var currentPath: String
-            if (listOfLambdas.isEmpty()) currentPath = findPathToPoint(lift) else {
-                currentPath = findPathToPoint(nearestLambda)
-                if (currentPath == "NOPATH") listOfUnreachableLambdas.add(nearestLambda)
-            }
+
             val numberOfLambdas = listOfLambdas.size
             var numberOfLambdas1: Int
-           // println(currentPath)
+            // println(currentPath)
             for (move in currentPath) {
                 if (canMakeMove().contains(move)) {
                     if (isUnderStone() && move == 'D') {
@@ -238,14 +236,14 @@ class Robot(inputField: String) {
                         globalPath += move
                     }
                     updateField()
-                    val newNearestLambda = getNearestLambda()
-                    if (newNearestLambda != nearestLambda) break
+                    //val newNearestLambda = getNearestLambda()
+                    //if (newNearestLambda != nearestPoint) break
                 } else break
                 numberOfLambdas1 = listOfLambdas.size
                 if (numberOfLambdas1 != numberOfLambdas) break
             }
             if (gameboard.getState() == Gameboard.State.WON) return globalPath
-            if (listOfLambdas.isEmpty() && isLiftBlocked() || isRobotBlocked() || gameboard.getState() == Gameboard.State.DEAD) {
+            if (listOfLambdas.isEmpty() && (isLiftBlocked() || listOfUnreachableLambdas.isNotEmpty())|| isRobotBlocked() || gameboard.getState() == Gameboard.State.DEAD) {
                 var step = 0
                 var maxScore = 0
                 for (k in 0 until listOfChanges.size) {
